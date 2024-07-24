@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title></title>
+    <link href="css/style.css" rel="stylesheet">
+</head>
+
+<body>
+    <div>
+        <button type="button" id="start-download">Start download</button>
+        <p>Progress (KiB): <span id="downloaded">0</span> / <span id="total">0</span> (<span id="percantage">0</span>%)
+        </p>
+        <p>
+            <span id="transfer-rate">0</span> KiB/s
+        </p>
+    </div>
+    <script>
+        const dwlBtn = document.getElementById("start-download");
+        const percentageEl = document.getElementById("percantage");
+        const downloadedEl = document.getElementById("downloaded");
+        const totalEl = document.getElementById("total");
+        const transferRateEl = document.getElementById("transfer-rate");
+
+        dwlBtn.addEventListener("click", async () => {
+            console.log("Starting download");
+            const abortController = new AbortController();
+            // setTimeout(() => {
+            //     abortController.abort();
+            // }, 5000);
+
+            const response = await fetch("http://localhost:8080/data.json", {
+                signal: abortController.signal
+            });
+
+            const totalFileSize = Number.parseInt(response.headers.get("content-length"), 10) || 0;
+            totalEl.textContent = (totalFileSize / 1024).toFixed(2);
+
+            let downloadedTotal = 0;
+
+            let downloadedLastSecond = 0;
+            const startOfDownload = performance.now();
+            let lastRateReport = startOfDownload;
+
+            const [progressReader, bodyReader] = response.body.tee();
+
+            for await (const chunk of progressReader) {
+                downloadedLastSecond += chunk.length;
+                if (performance.now() - lastRateReport > 1000) {
+                    transferRateEl.textContent = (downloadedLastSecond / 1024).toFixed(2);
+                    downloadedLastSecond = 0;
+                    lastRateReport = performance.now();
+                }
+
+                downloadedTotal += chunk.length;
+                downloadedEl.textContent = (downloadedTotal / 1024).toFixed(2);
+                percentageEl.textContent = ((downloadedTotal / totalFileSize) * 100).toFixed(2);
+            }
+
+            const downloadedData = await (new Response(bodyReader)).arrayBuffer();
+            const textData = new Uint8Array(downloadedData);
+            console.log("uint8 length:", textData.length);
+            console.log("head:", textData.slice(0, 100));
+
+            const decoder = new TextDecoder();
+            console.log("Text:", decoder.decode(textData.slice(0, 100)));
+        });
+    </script>
+</body>
+
+</html>
