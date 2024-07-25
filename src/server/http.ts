@@ -40,6 +40,30 @@ async function sendStaticFile(reply: http.ServerResponse, fileName: keyof typeof
     return reply.end();
 }
 
+async function responseDownloadFile(reply: http.ServerResponse, filePath: string, transferRate: number = 512000) {
+    const chunkSize = Math.floor(transferRate / 10);
+    const reader = createReadStream(filePath, {
+        highWaterMark: chunkSize,
+    });
+    const fileStat = await fs.stat(filePath);
+    console.log("Sending data");
+    reply.writeHead(200, undefined, { "content-length": fileStat.size });
+    await pipeline(
+        reader,
+        async function* (data) {
+            let chunk: Buffer;
+            for await (chunk of data) {
+                await timeout(100);
+                yield chunk;
+            }
+        },
+        reply
+    ).catch(err => {
+        console.log("[ERROR]:", err);
+    });
+    return reply.end();
+}
+
 async function httpHandler(req: http.IncomingMessage, reply: http.ServerResponse) {
     if (!req.url) {
         reply.statusCode = 404;
@@ -59,31 +83,20 @@ async function httpHandler(req: http.IncomingMessage, reply: http.ServerResponse
     }
     else if (url.pathname === "/data.json") {
         const fileName = "./public/large-file.json";
-
-        // const transferRate = 512000;
         const transferRate = 3986463;
-        const chunkSize = Math.floor(transferRate / 10);
-        const reader = createReadStream(fileName, {
-            highWaterMark: chunkSize,
-        });
-        const fileStat = await fs.stat(fileName);
-        console.log("Sending data");
-        reply.writeHead(200, undefined, { "content-length": fileStat.size });
-        await pipeline(
-            reader,
-            async function* (data) {
-                let chunk: Buffer;
-                for await (chunk of data) {
-                    await timeout(100);
-                    yield chunk;
-                }
-            },
-            reply
-        ).catch(err => {
-            console.log("[ERROR]:", err);
-        });
-        return reply.end();
+        return responseDownloadFile(reply, fileName, transferRate);
     }
+    else if (url.pathname === "/small-data.json") {
+        const fileName = "./public/small-file.json";
+        const transferRate = 512;
+        return responseDownloadFile(reply, fileName, transferRate);
+    }
+    else if (url.pathname === "/ubuntu.iso") {
+        const fileName = "./public/ubuntu.iso";
+        const transferRate = 104857600; // ~ 100MB
+        return responseDownloadFile(reply, fileName, transferRate);
+    }
+
     // else if (url.pathname === "/style.css") {
     //     return sendStaticFile(reply, "style.css");
     // }
